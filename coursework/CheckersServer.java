@@ -1,47 +1,49 @@
-/*
-Need overall playing environment class
-this contains the board, the menu, the pieces, the game setup, evaluating move validity, updating gui
-
-Need player class, this implements move ability, generate valid successors, obtain player state
-subclass of player: AI. this implements the adversarial search
-subclass of player: Human. this implements move help
-do i need a checker class
-*/
+/*******************************************************************
+* AI Checkers. Play against an AI opponent of varying difficulty   *
+* Warren Boult, University of Sussex, 2018.                        *
+********************************************************************/
 
 import java.util.*;
 import javax.swing.*;
 import java.awt.*;
 import java.awt.event.*;
+import java.util.concurrent.TimeUnit;
+import java.util.Random;
 
 import java.awt.Desktop;
 import java.net.URI;
 
+// Main class to build the gui, and handle the playing of the game.
 public class CheckersServer extends JFrame {
 
-	JPanel pane, panel1, panel2, panel3;
-	JLabel label1;
+	JPanel pane, panel1, panel2, panel3, scorePanel;
+	JLabel label1, scoreLabel;
 	JButton btnNewGame, btnExit, btnRules, btnQuitGame;
 	JToggleButton btnHelp;
 	Board boardPanel;
 	JComboBox diffOptions;
-	Game game;
-	private final static int BOARDSIZE = 512;
-	private final static int WINDOWHEIGHT = (int) (BOARDSIZE/0.8);
+	static Game game;
+	private static int BOARDSIZE = 512;
+	private static int WINDOWHEIGHT = (int) ( BOARDSIZE / 0.8 );
+	private Point oldCenter;
+	private Point oldPos;
+	private boolean dragFlag = false;
+	private Checker checkerAtPos, checkerAtNewPos;
+	private ArrayList<Move> validMoves = new ArrayList<Move>();
 
 	public CheckersServer()
 	{
 
+		System.out.println("Welcome to Checkers AI");
 		game = new Game( BOARDSIZE / 8 );
-		homeGUI();
-		// if game.started() {
-		//
-		// }
-		// Game game = new Game();
+		homeGUI( game );
+		// game = gameState;
 
 	}
 
-// TODO: work out how to set up a layout with left side for board, right side for controls
-	private void homeGUI()
+	// Display the initial gui, for not started game.
+	// Board not yet populated, and cannot be interacted with
+	public void homeGUI( Game game )
 	{
 		//Create and set up the window.
 		// JFrame frame = new JFrame( "CheckersServer" );
@@ -54,7 +56,7 @@ public class CheckersServer extends JFrame {
 		// GridLayout layout = new GridLayout(1, 2);
 		// setLayout(layout);
 
-		// TODO: Use GridBagLayout to get 2 sections
+		// Using gridbag layout for menu items, so GridBagConstraints must be set
 		pane.setLayout(new GridBagLayout());
 		GridBagConstraints c = new GridBagConstraints();
 
@@ -113,7 +115,21 @@ public class CheckersServer extends JFrame {
 				String player1 = n == 0 ? "Human" : "AI";
 				System.out.println( "- Starting new game" );
 				game.setPlayer( player1 );
-				startGame();
+				System.out.println( "- First player is " + game.whoseTurn() );
+				System.out.println( "- Difficulty rating: " + game.getDifficulty() );
+				// setVisible(false);
+				newGame( game );
+
+				// javax.swing.SwingUtilities.invokeLater(new Runnable() {
+				// 	public void run() {
+
+				revalidate();
+				repaint();
+				// setVisible(true);
+
+				// 	}
+				// });
+
 			}
 
 		});
@@ -157,7 +173,7 @@ public class CheckersServer extends JFrame {
 
 		});
 
-		String[] diffStrings = { "Difficulty (Default is easy):", "Easy", "Intermediate", "Hard" };
+		String[] diffStrings = { "Difficulty (Default is easy):", "Easy", "Intermediate", "Hard", "Extreme" };
 		diffOptions = new JComboBox( diffStrings );
 		diffOptions.addItemListener(new ItemListener()
 		{
@@ -170,7 +186,6 @@ public class CheckersServer extends JFrame {
 				{
 
 					String item = (String) e.getItem();
-					// System.out.println(item);
 					game.setDifficulty( item );
 
 				}
@@ -214,20 +229,32 @@ public class CheckersServer extends JFrame {
 		setSize( BOARDSIZE, WINDOWHEIGHT );
 		setLocationRelativeTo( null );
 		setVisible(true);
+		repaint();
 		validate();
 
 		// setVisible(true);
 
 	}
 
-	private void startGame()
+	// Display the in-game gui,
+	// add event listeners to the board to drive event driven gameplay
+	public void newGame( Game game )
 	{
 
 		game.startGame();
+		// setVisible(false);
+		// revalidate();
+		// repaint();
 
+
+		// Remove home screen buttons
 		panel3.remove( btnNewGame );
 		panel3.remove( diffOptions );
 		panel3.remove( btnExit );
+		panel3.remove( btnRules );
+
+		// boardPanel.repaint();
+		// boardPanel.revalidate();
 
 		btnQuitGame = new JButton( "Quit Game" );
 		btnQuitGame.addActionListener(new ActionListener()
@@ -245,21 +272,35 @@ public class CheckersServer extends JFrame {
 				{
 
 					game.endGame();
-					panel3.removeAll();
-					homeGUI();
-					// panel3.updateUI();
-					revalidate();
-					repaint();
+					// panel3.removeAll();
+					// boardPanel.clearHighlightSquares();
+					// dispose();
+					// setVisible(false);
+					// // panel3.updateUI();
+					// panel3.revalidate();
+					// panel3.repaint();
+					// javax.swing.SwingUtilities.invokeLater(new Runnable() {
+					// 	public void run() {
+					//
+					// 		homeGUI( game );
+					// 		revalidate();
+					// 		repaint();
+					// 		setVisible(true);
+					//
+					// 	}
+					// });
+					setVisible( false );
+					dispose();
+					System.exit(0);
+
 
 				}
-
 
 			}
 
 		});
 
 		btnHelp = new JToggleButton("Help");
-
 		btnHelp.addActionListener(new ActionListener()
 		{
 
@@ -273,10 +314,22 @@ public class CheckersServer extends JFrame {
 					game.setHelp(true);
 				else
 					game.setHelp(false);
+					boardPanel.clearHighlightSquares();
+					revalidate();
+					repaint();
 
 			}
 
 		});
+
+		String labelString = "Player Pieces: " + (12 - game.aiScore()) + " | AI Pieces: " + (12 - game.playerScore());
+		scoreLabel = new JLabel(labelString);
+		scoreLabel.setOpaque(true);
+		scorePanel = new JPanel();
+		scoreLabel.setBackground( new Color( 232, 189, 71 ) );
+		// scorePanel.add(scoreLabel);
+		// scorePanel.revalidate();
+		// TODO: Add a score panel, maybe other info
 		GridBagConstraints c = new GridBagConstraints();
 		c.fill = GridBagConstraints.BOTH;
 		c.anchor = GridBagConstraints.CENTER;
@@ -290,218 +343,229 @@ public class CheckersServer extends JFrame {
 		c.gridx = 2;
 		c.gridy = 0;
 		panel3.add(btnRules, c);
+		c.gridx = 3;
+		// c.gridwidth = 3;
+		panel3.add(scoreLabel, c);
 		c.gridx = 0;
 		c.gridy = 2;
+		c.gridwidth = 1;
 		pane.add(panel3, c);
+		panel3.revalidate();
+		boardPanel.revalidate();
+		pane.revalidate();
+		pane.repaint();
 
-		repaint();
-		revalidate();
-
-	}
-
-	private void updateGUI()
-	{
-		// TODO: add implementation to update gui after ai/human move, might just be
-		// a simple case of repainting with updated game state, multiple repaints for multicapture
-	}
-
-	private void winnerPopup()
-	{
-		String messageString;
-
-		if ( game.humanHasWon() )
-			messageString = "Well done, you won!!";
-		else
-			messageString = "Unlucky, AI won";
-
-		JOptionPane.showMessageDialog(null,
-									messageString,
-									"Game Won",
-									JOptionPane.PLAIN_MESSAGE);
-
-
-	}
-
-	public static void main( String[] args )
-	{
-
-	//Schedule a job for the event-dispatching thread:
-	//creating and showing this application's GUI.
-		javax.swing.SwingUtilities.invokeLater(new Runnable()
-		{
-			public void run()
-			{
-
-				CheckersServer gui = new CheckersServer();
-
-				while ( game.inPlay() )
-				{
-
-					if ( game.isWon() )
-					{
-
-						winnerPopup();
-						game.endGame();
-						homeGUI();
-						break;
-
-					}
-
-
-
-				}
-				// gui.setVisible( true );
-
-			}
-
-		});
-
-	}
-}
-
-class Board extends JComponent {
-	private static int rows = 8;
-	private static int columns = 8;
-	private static Color green = new Color( 72, 112, 20 );
-	private static Color cream = new Color( 242, 239, 208 );
-	// BoardLayout board_layout;
-	private Game gameState;
-	private Point oldCenter;
-	private Point oldPos;
-	private boolean dragFlag = false;
-	private Checker checkerAtPos, checkerAtNewPos;
-
-	Board( Game game )
-	{
-		gameState = game;
-		// createBoard();
-		// Dimension dimPrefSize = new Dimension(160, 160);
-		/*
-		newly opened: draw empty board, buttons saying new game, quit, difficulty, rules
-		new game: draw initial board, quit, help, rules
-			initialise checker positions, type
-			if help, highlight squares that can be moved to when a piece is clicked
-		making moves: drag a piece to the new position; find which square that falls in;
-		check if valid move, by creating a new Move based on proposed move, then comparing with
-		list of valid successors for that position, redraw with invalid popup explain;
-			exit invalid popup, redraw without popup;
-		check if jump,
-			then if multijump, by checking if that proposed Move is start of multijump list in successorlist,
-			redraw first move, then all successive;
-				update positions, type of piece
-			else if single jump, redraw with piece moved to center of new pos, jumped piece removed;
-				update positions, types of piece
-			check if game won, if so redraw with popup;
-				on exit popup, redraw home screen
-		else if move, redraw with moved piece in center of new square
-		switch players
-
-		*/
-		addMouseListener(new MouseAdapter()
+		// Add listener functionality to the board
+		boardPanel.addMouseListener(new MouseAdapter()
 		{
 
+			public void mouseEntered( MouseEvent e ) {}
+			public void mouseExited( MouseEvent e ) {}
+			public void mouseMoved( MouseEvent e ) {}
+
+			// When mouse is pressed, find the board position pressed on,
+			// and generate valid moves.
+			// Store the board position to repaint checker there if proposed move is invalid
 			@Override
 			public void mousePressed( MouseEvent e )
 			{
-				// if (gameState.inPlay()) {
 
-				// // Obtain mouse coordinates at time of press.
-				//
-				int x = e.getX();
-				int y = e.getY();
-				Point boardPos = convertToBoardPosition(x,y);
-				checkerAtPos = gameState.checkers[boardPos.x][boardPos.y];
+				if ( !game.inPlay() )
+					return;
 
-				if ( checkerAtPos != null )
+				if ( game.whoseTurn() == "Human" )
 				{
 
-					if ( gameState.getPlayerColour() == checkerAtPos.getColour() )
+					game.clearSuccessors( validMoves );
+
+					// // Obtain mouse coordinates at time of press.
+					//
+					int x = e.getX();
+					int y = e.getY();
+					Point boardPos = boardPanel.convertToBoardPosition(x,y);
+					checkerAtPos = game.checkers[boardPos.x][boardPos.y];
+
+					if ( checkerAtPos != null && game.getPlayerColour() == checkerAtPos.getColour() )
 					{
 
-						System.out.println("Clicked on your piece");
+						// System.out.println("Clicked on your piece");
 						oldCenter = checkerAtPos.getCenter();
 						oldPos = checkerAtPos.getPos();
+						game.clearSuccessors( validMoves );
+						validMoves = game.generateAllValidSuccessors();
 						dragFlag = true;
 
 					}
 
 				}
-				// System.out.println( "X coord: " + x + "; Y coord: " + y );
-				// // int posx = x / width;
-				// // TODO: find out what checker is being pressed, if playing player's, set checker center as mouse pos, repaint
 
 			}
 
+			// When dragging of piece is finished, we check to see if this proposed move is valid
+			// If invalid, redraw checker at original pos, display reason why invalid.
+			// If move is valid, update state and gui to reflect move
 			@Override
 			public void mouseReleased( MouseEvent e )
 			{
-				if ( dragFlag )
-					dragFlag = false;
-				else
+
+				if ( !game.inPlay() )
 					return;
 
-				// TODO: when mouse is released, build proposed move, if valid, repaint snapped to
-				// If invalid,
-				int x = e.getX();
-				int y = e.getY();
-				Point boardPos = convertToBoardPosition(x,y);
-				checkerAtNewPos = gameState.checkers[boardPos.x][boardPos.y];
-				if ( checkerAtNewPos == null )
+				if ( game.whoseTurn() == "Human" )
 				{
-
-					System.out.println("Found a piece in selected square!");
-					checkerAtPos.setBoardPos( boardPos.x, boardPos.y );
-					gameState.checkers[boardPos.x][boardPos.y] = checkerAtPos;
-					gameState.checkers[oldPos.x][oldPos.y] = null;
-
-				}
-				else
-					checkerAtPos.setBoardPos( oldPos.x, oldPos.y );
-
-				repaint();
-
-			}
-
-			@Override
-			public void mouseClicked( MouseEvent e )
-			{
-				if (gameState.inPlay())
-				{
-
-					// TODO: if mouse is clicked over a valid square (playing player's team,
-					// move possible from that square), if help is on, highlight movable squares
-					// Obtain mouse coordinates at time of press.
+					if ( dragFlag )
+						dragFlag = false;
+					else
+						return;
 
 					int x = e.getX();
 					int y = e.getY();
-					System.out.println( "X coord: " + x + "; Y coord: " + y );
-					Point boardPos = convertToBoardPosition(x,y);
-					checkerAtPos = gameState.checkers[boardPos.x][boardPos.y];
-					if ( checkerAtPos != null )
+
+					if ( x > 512 || y > 512 )
 					{
 
-						if ( gameState.getPlayerColour() == checkerAtPos.getColour() )
-							System.out.println("Clicked on your piece");
-							// TODO: highlight squares based on valid moves
+						String messageString = "Attempting to move outside of board, try again";
+						errorPopup( messageString );
+						checkerAtPos.setBoardPos( oldPos.x, oldPos.y );
+						return;
 
 					}
-					// int posx = x / width;
-					// TODO: find out what checker is being pressed, if playing player's, set checker center as mouse pos, repaint
 
+					// TODO: add popup explaining why a move is invalid
+					Point boardPos = boardPanel.convertToBoardPosition(x,y);
+					checkerAtNewPos = game.checkers[boardPos.x][boardPos.y];
+
+					if ( checkerAtNewPos == null && (boardPos.x + boardPos.y) % 2 != 0 ) // for white squares x + y is even
+					{
+
+						if ( validMoves.isEmpty() )
+						{
+
+							String messageString = "No valid moves available for that piece, try again";
+							errorPopup( messageString );
+							checkerAtPos.setBoardPos( oldPos.x, oldPos.y );
+
+						}
+
+						BoardMove newMove = new BoardMove( oldPos, boardPos );
+
+						for ( Move move : validMoves )
+						{
+
+							if ( move.getMovePos().equals( newMove.newPos ) && move.getStartPos().equals( newMove.oldPos ) ) // If proposed end position matches one of the valid moves, use that valid move
+							{
+
+								// Do human move, then switch play to do AI move
+								updateGUI( game, move );
+
+
+								// Creating a Runnable instance here:
+								javax.swing.SwingUtilities.invokeLater(new Runnable() {
+									public void run() {
+
+										game.setPlayer( "AI" );
+										Move bestMove = game.makeAIMove();
+
+										updateGUI( game, bestMove );
+										game.setPlayer( "Human" );
+
+									}
+								});
+
+								return;
+							}
+
+						}
+
+						String messageString = "Proposed move not valid, try again";
+						errorPopup( messageString );
+						checkerAtPos.setBoardPos( oldPos.x, oldPos.y );
+						// break;
+
+					}
+					else if ( boardPos.x == oldPos.x && boardPos.y == oldPos.y )
+					{}
+					else
+					{
+
+						String messageString = "Attempting to move to white or non-empty square, try again";
+						errorPopup( messageString );
+						checkerAtPos.setBoardPos( oldPos.x, oldPos.y );
+
+					}
+
+					revalidate();
+					repaint();
+
+				}
+
+			}
+
+			// Upon clicking a piece, if help is enabled squares that can be moved to
+			// should get highlighted
+			@Override
+			public void mouseClicked( MouseEvent e )
+			{
+
+				if ( !game.inPlay() )
+					return;
+
+				if ( game.whoseTurn() == "Human" )
+				{
+
+					boardPanel.clearHighlightSquares();
+					game.clearSuccessors( validMoves );
+
+					if ( game.getHelp() )
+					{
+
+						int x = e.getX();
+						int y = e.getY();
+						// System.out.println( "X coord: " + x + "; Y coord: " + y );
+						Point boardPos = boardPanel.convertToBoardPosition(x,y);
+
+						checkerAtPos = game.checkers[boardPos.x][boardPos.y];
+						if ( checkerAtPos != null )
+						{
+
+							if ( game.getPlayerColour() == checkerAtPos.getColour() )
+							{
+
+								// System.out.println("Clicked on your piece");
+								validMoves = game.generateAllValidSuccessors();
+								ArrayList<Point> highlightSquares = new ArrayList<Point>();
+								for ( Move move: validMoves )
+								{
+									if ( move.getStartPos().equals(boardPos) )
+										highlightSquares.add( move.getMovePos() );
+								}
+
+								boardPanel.setHighlightSquares( highlightSquares );
+
+							}
+
+						}
+
+					}
+
+					revalidate();
 					repaint();
 				}
 
 			}
-
 		});
 
-		addMouseMotionListener(new MouseMotionAdapter()
+		boardPanel.addMouseMotionListener(new MouseMotionAdapter()
 		{
 
 			@Override
 			public void mouseDragged( MouseEvent e )
 			{
-				if ( dragFlag )
+
+				if ( !game.inPlay() )
+					return;
+
+				if ( game.whoseTurn() == "Human" && dragFlag )
 				{
 
 					checkerAtPos.setPos( e.getX(), e.getY() );
@@ -512,11 +576,173 @@ class Board extends JComponent {
 			}
 
 		});
-		repaint();
+
 		revalidate();
+		repaint();
+		// If first player is AI, start by letting the AI move
+		javax.swing.SwingUtilities.invokeLater(new Runnable() {
+			public void run() {
+
+				if ( game.whoseTurn() == "AI" )
+				{
+
+
+					Move bestMove = game.makeAIMove();
+					updateGUI( game, bestMove );
+					game.setPlayer( "Human" );
+
+				}
+
+			}
+		});
+
+		// }
+
+
+		// panel3.repaint();
+		// panel3.revalidate();
+		revalidate();
+		repaint();
+		// setVisible(true);
 
 	}
 
+	// Update the game state, and reflect the changes by repainting the gui.
+	// Upon each update, if game is won, then display the winner popup and end game
+	public void updateGUI( Game game, Move move )
+	{
+
+		// iterate through all board positions, 1 for a single capture, multiple for mutlicap
+		for ( BoardMove boardMove : move.moveList )
+		{
+
+			System.out.println("- Making move " + boardMove.getMove());
+			game.updateState( move.getMoveType(), boardMove );
+			boardPanel.clearHighlightSquares();
+			String labelString = "Player Pieces: " + (12 - game.aiScore()) + " | AI Pieces: " + (12 - game.playerScore());
+			scoreLabel.setText(labelString);
+
+			revalidate();
+			repaint();
+			// revalidate();
+			// repaint();
+
+			if ( game.isWon() )
+			{
+
+				winnerPopup();
+				game.endGame();
+				panel3.removeAll();
+				boardPanel.clearHighlightSquares();
+				dispose();
+				setVisible( false );
+				homeGUI( game );
+				try
+				{
+					TimeUnit.SECONDS.sleep(1);
+				}
+				catch ( InterruptedException err )
+				{
+					System.err.println("Thread interrupted");
+				}
+				revalidate();
+				repaint();
+				setVisible( true );
+				break;
+
+			}
+
+			try
+			{
+				TimeUnit.SECONDS.sleep(2);
+			}
+			catch ( InterruptedException err )
+			{
+				System.err.println("Thread interrupted");
+			}
+
+		}
+
+	}
+
+	// Display a popup if the game is won
+	public void winnerPopup()
+	{
+
+		String messageString = game.humanHasWon() ? "Well done, you won!" : "Bad luck, you lost";
+
+		// if ( game.humanHasWon() )
+		// 	messageString = "Well done, you won!!";
+		// else
+		// 	messageString = "Unlucky, AI won";
+
+		JOptionPane.showMessageDialog(null,
+									messageString,
+									"Game Won",
+									JOptionPane.PLAIN_MESSAGE);
+
+	}
+
+	// Display a popup if move is invalid
+	public void errorPopup( String messageString )
+	{
+
+		JOptionPane.showMessageDialog(null,
+									messageString,
+									"Invalid Move",
+									JOptionPane.PLAIN_MESSAGE);
+
+	}
+
+	public static void main( String[] args )
+	{
+
+		new CheckersServer();
+
+	}
+}
+
+// Board class is used to draw the board, and the checkers on the board.
+// Purely a gui-related aspect, does not control any game functionality
+class Board extends JComponent {
+	private static int rows = 8;
+	private static int columns = 8;
+	private static Color green = new Color( 72, 112, 20 );
+	private static Color blue = new Color( 112, 157, 229 );
+	private static Color cream = new Color( 242, 239, 208 );
+	// BoardLayout board_layout;
+	private Game gameState;
+	private Point oldCenter;
+	private Point oldPos;
+	private boolean dragFlag = false;
+	private Checker checkerAtPos, checkerAtNewPos;
+	public ArrayList<Point> highlightSquares = new ArrayList<Point>();
+
+	Board( Game game )
+	{
+
+		gameState = game;
+
+	}
+
+	public void setHighlightSquares( ArrayList<Point> squares )
+	{
+
+		for ( Point square: squares )
+		{
+
+			highlightSquares.add(square);
+
+		}
+
+	}
+
+	public void clearHighlightSquares()
+	{
+
+		highlightSquares.clear();
+
+	}
 
 	public Point convertToBoardPosition( int xcoord, int ycoord )
 	{
@@ -532,15 +758,6 @@ class Board extends JComponent {
 	@Override
 	protected void paintComponent( Graphics g )
 	{
-		// System.out.println("Size of board panel: " + this.getSize().height);
-		// this.setLayout(new GridLayout(8,8));
-		// this.setBorder(BorderFactory.createEmptyBorder(10,10,10,10));
-		// this.setVisible(true);
-		// // Color color = null;
-		// JPanel square = new JPanel();
-		// // square.setSize(50,50);
-		// square.setPreferredSize(new Dimension(50, 50));
-
 
 		((Graphics2D) g).setRenderingHint( RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON );
 
@@ -557,13 +774,21 @@ class Board extends JComponent {
 					if (i % 2 == 0)
 						g.setColor( cream );
 					else
+					{
 						g.setColor( green );
+						if ( highlightSquares.contains( new Point( j, i ) ) )
+							g.setColor( blue );
+					}
 
 				}
 				else {
 
 					if (i % 2 == 0)
+					{
 						g.setColor( green );
+						if ( highlightSquares.contains( new Point( j, i ) ) )
+							g.setColor( blue );
+					}
 					else
 						g.setColor( cream );
 
@@ -596,28 +821,351 @@ class Board extends JComponent {
 
 }
 
+// The Game class holds all the internal game state information,
+// includes the functions to build initial state, advance game state,
+// generate successors, and check if game is won
 class Game {
 
 	private boolean inPlayFlag = false;
 	private String activePlayer = "Human";
 	private int difficulty = 1;
+	private int seLevel = 1;
 	private boolean help = false;
 	Checker[][] checkers;
-	private static int SQUARESIZE;
+	public static int SQUARESIZE;
 	private String playerColour = "Black";
 	private String aiColour = "Red";
+	ArrayList<Point> highlightSquares = new ArrayList<Point>();
+
+	ArrayList<MoveAndScore> aiMoveList = new ArrayList<MoveAndScore>();
+	int maxDepth = 1;
+	int seCount;
+	int deCount;
+	int pCount;
+
 	// private String playerTurn;
 
-	public Game(int squareSize)
+	public Game( int squareSize )
 	{
 
 		SQUARESIZE = squareSize;
-		playerColour = activePlayer == "Human" ? "Black" : "Red";
-		aiColour = playerColour == "Black" ? "Red" : "Black";
 		// playerTurn = player;
 
 	}
 
+	// Copy constructor needed to create a temporary game state for AI
+	public Game( Game original )
+	{
+
+		// Just copy over all fields from original gameState
+		this.inPlayFlag = original.inPlay();
+		this.activePlayer = original.whoseTurn();
+		this.difficulty = original.getDifficulty();
+		this.help = original.getHelp();
+		this.checkers = new Checker[original.checkers[0].length][original.checkers[1].length];
+		for ( int x = 0; x < checkers[0].length; x++)
+		{
+			for ( int y = 0; y < checkers[1].length; y++)
+			{
+				if ( original.checkers[x][y] != null )
+					checkers[x][y] = new Checker( original.checkers[x][y] );
+			}
+		}
+		this.SQUARESIZE = original.SQUARESIZE;
+		this.playerColour = original.getPlayerColour();
+		this.aiColour = original.getAIColour();
+		if ( !original.highlightSquares.isEmpty() )
+		{
+			for ( Point square : original.highlightSquares )
+				this.highlightSquares.add(square);
+		}
+		if ( !original.aiMoveList.isEmpty() )
+		{
+			for ( MoveAndScore mas : original.aiMoveList )
+				this.aiMoveList.add( new MoveAndScore( mas ) );
+		}
+		this.maxDepth = original.maxDepth;
+		this.seCount = original.seCount;
+		this.deCount = original.deCount;
+		this.pCount = original.pCount;
+
+	}
+
+	// If aiScore is maximal, ie 12, then ai has won the game
+	public boolean aiHasWon()
+	{
+		// System.out.println("AI score: " + this.aiScore() );
+		if ( this.aiScore() == 12 )
+		{
+
+			inPlayFlag = false;
+			return true;
+
+		}
+		else
+			return false;
+
+	}
+
+	// AI score is max number of pieces minus number of human player's pieces remaining
+	// Used to calculate leaf utility and to see if game is won
+	public int aiScore()
+	{
+
+		int score = 12;
+		for ( int x = 0; x < 8; x++ )
+		{
+			for ( int y = 0; y < 8; y++ )
+			{
+
+				if ( checkers[x][y] != null && checkers[x][y].getColour() == this.getPlayerColour() )
+					score--;
+
+			}
+		}
+
+		return score;
+
+	}
+
+	// Returns the valid capture moves for a given position
+	// if conditions check to see if the proposed move end point is within the board bounds,
+	// if the space is empty, and if the piece to be captured is of the opposite colour
+	// Recurse for multiCaptures,
+	// make sure we're not trying to do a multicapture forwards and backwards
+	// in the same spot with (newX != oldX || newY != oldY) in conditional
+	private ArrayList<Move> addValidCaptureMoves( int x, int y, String colour, PieceType type, int oldX, int oldY )
+	{
+
+		ArrayList<Move> validMoves = new ArrayList<Move>();
+
+		if ( this.whoseTurn() == "Human" )
+		{
+
+			if ( x-2 >= 0 && y-2 >= 0 && (x-2 != oldX || y-2 != oldY) && checkers[x-1][y-1] != null && checkers[x-1][y-1].getColour() != colour && checkers[x-2][y-2] == null ) // left capture move allowed
+			{
+
+				// Move move = new Move( new Point(x, y), new Point(x-2, y-2) );
+				// validMoves.add(move);
+				ArrayList<Move> multiCapMoves = addValidCaptureMoves( x-2, y-2, colour, type, x, y );
+				addMultiCapMoves( x, y, x-2, y-2, validMoves, multiCapMoves );
+
+			}
+			if ( x+2 <= 7 && y-2 >= 0 && (x+2 != oldX || y-2 != oldY) && checkers[x+1][y-1] != null && checkers[x+1][y-1].getColour() != colour && checkers[x+2][y-2] == null ) // right capture move allowed
+			{
+
+				// Move move = new Move( new Point(x, y), new Point(x+2, y-2) );
+				// validMoves.add(move);
+				ArrayList<Move> multiCapMoves = addValidCaptureMoves( x+2, y-2, colour, type, x, y );
+				addMultiCapMoves( x, y, x+2, y-2, validMoves, multiCapMoves );
+
+			}
+			if ( type == PieceType.BLACK_KING || type == PieceType.RED_KING ) // If king piece, also check downward moves
+			{
+
+				if ( x-2 >= 0 && y+2 <= 7 && (x-2 != oldX || y+2 != oldY) && checkers[x-1][y+1] != null && checkers[x-1][y+1].getColour() != colour && checkers[x-2][y+2] == null ) // left capture move allowed
+				{
+
+					// Move move = new Move( new Point(x, y), new Point(x-2, y+2) );
+					// validMoves.add(move);
+					ArrayList<Move> multiCapMoves = addValidCaptureMoves( x-2, y+2, colour, type, x, y );
+					addMultiCapMoves( x, y, x-2, y+2, validMoves, multiCapMoves );
+
+				}
+				if ( x+2 <= 7 && y+2 <= 7 && (x+2 != oldX || y+2 != oldY) && checkers[x+1][y+1] != null && checkers[x+1][y+1].getColour() != colour && checkers[x+2][y+2] == null ) // right capture move allowed
+				{
+
+					// Move move = new Move( new Point(x, y), new Point(x+2, y+2) );
+					// validMoves.add(move);
+					ArrayList<Move> multiCapMoves = addValidCaptureMoves( x+2, y+2, colour, type, x, y );
+					addMultiCapMoves( x, y, x+2, y+2, validMoves, multiCapMoves );
+
+				}
+
+			}
+
+		}
+		else if ( this.whoseTurn() == "AI" )
+		{
+
+			if ( x-2 >= 0 && y+2 <= 7 && (x-2 != oldX || y+2 != oldY) && checkers[x-1][y+1] != null && checkers[x-1][y+1].getColour() != colour && checkers[x-2][y+2] == null ) // left capture move allowed
+			{
+
+				// Move move = new Move( new Point(x, y), new Point(x-2, y+2) );
+				// validMoves.add(move);
+				ArrayList<Move> multiCapMoves = addValidCaptureMoves( x-2, y+2, colour, type, x, y );
+				addMultiCapMoves( x, y, x-2, y+2, validMoves, multiCapMoves );
+
+			}
+			if ( x+2 <= 7 && y+2 <= 7 && (x+2 != oldX || y+2 != oldY) && checkers[x+1][y+1] != null && checkers[x+1][y+1].getColour() != colour && checkers[x+2][y+2] == null ) // right capture move allowed
+			{
+
+				// Move move = new Move( new Point(x, y), new Point(x+2, y+2) );
+				// validMoves.add(move);
+				ArrayList<Move> multiCapMoves = addValidCaptureMoves( x+2, y+2, colour, type, x, y );
+				addMultiCapMoves( x, y, x+2, y+2, validMoves, multiCapMoves );
+
+			}
+			if ( type == PieceType.BLACK_KING || type == PieceType.RED_KING ) // If king piece, also check upward moves
+			{
+
+				if ( x-2 >= 0 && y-2 >= 0 && (x-2 != oldX || y-2 != oldY) && checkers[x-1][y-1] != null && checkers[x-1][y-1].getColour() != colour && checkers[x-2][y-2] == null ) // left capture move allowed
+				{
+
+					// Move move = new Move( new Point(x, y), new Point(x-2, y-2) );
+					// validMoves.add(move);
+					ArrayList<Move> multiCapMoves = addValidCaptureMoves( x-2, y-2, colour, type, x, y );
+					addMultiCapMoves( x, y, x-2, y-2, validMoves, multiCapMoves );
+
+				}
+				if ( x+2 <= 7 && y-2 >= 0 && (x+2 != oldX || y-2 != oldY) && checkers[x+1][y-1] != null && checkers[x+1][y-1].getColour() != colour && checkers[x+2][y-2] == null ) // right capture move allowed
+				{
+
+					// Move move = new Move( new Point(x, y), new Point(x+2, y-2) );
+					// validMoves.add(move);
+					ArrayList<Move> multiCapMoves = addValidCaptureMoves( x+2, y-2, colour, type, x, y );
+					addMultiCapMoves( x, y, x+2, y-2, validMoves, multiCapMoves );
+
+				}
+
+			}
+
+		}
+
+		return validMoves;
+
+	}
+
+	public void addMultiCapMoves( int x, int y, int newX, int newY, ArrayList<Move> validMoves, ArrayList<Move> multiCapMoves )
+	{
+
+
+		if ( multiCapMoves.isEmpty() )
+		{
+
+			Move move = new Move( new Point(x, y), new Point(newX, newY) );
+			validMoves.add(move);
+
+		}
+		else
+		{
+
+			for ( Move mcMove : multiCapMoves )
+			{
+				Move move = new Move( new Point(x, y), new Point(newX, newY) );
+				for ( BoardMove bMove : mcMove.moveList )
+					move.moveList.add( bMove );
+				validMoves.add(move);
+			}
+
+		}
+
+	}
+
+	// Returns the valid non-capture moves for a given position
+	// if conditions check to see if the proposed move end point is within the board bounds,
+	// and if the space is empty
+	private ArrayList<Move> addValidRegMoves( int x, int y, String colour )
+	{
+
+		// System.out.println("Generating regular moves..");
+		ArrayList<Move> validMoves = new ArrayList<Move>();
+
+		if ( this.whoseTurn() == "Human" )
+		{
+
+			if ( x-1 >= 0 && y-1 >= 0 && checkers[x-1][y-1] == null ) // regular left move allowed
+			{
+
+				// System.out.println("Found left move");
+				Move move = new Move( new Point(x, y), new Point(x-1, y-1) );
+				validMoves.add(move);
+
+
+			}
+			if ( x+1 <= 7 && y-1 >= 0 && checkers[x+1][y-1] == null ) // regular right move allowed
+			{
+
+				// System.out.println("Found right move");
+				Move move = new Move( new Point(x, y), new Point(x+1, y-1) );
+				validMoves.add(move);
+
+			}
+			if ( checkers[x][y].getType() == PieceType.BLACK_KING || checkers[x][y].getType() == PieceType.RED_KING ) // If king piece, also check downward moves
+			{
+
+				if ( x-1 >= 0 && y+1 <= 7 && checkers[x-1][y+1] == null ) // regular left move allowed
+				{
+
+					Move move = new Move( new Point(x, y), new Point(x-1, y+1) );
+					validMoves.add(move);
+
+				}
+				if ( x+1 <= 7 && y+1 <= 7 && checkers[x+1][y+1] == null ) // regular right move allowed
+				{
+
+					Move move = new Move( new Point(x, y), new Point(x+1, y+1) );
+					validMoves.add(move);
+
+				}
+
+			}
+
+		}
+		else if ( this.whoseTurn() == "AI" )
+		{
+
+			if ( x-1 >= 0 && y+1 <= 7 && checkers[x-1][y+1] == null ) // regular left move allowed
+			{
+
+				// System.out.println("Found left move");
+				Move move = new Move( new Point(x, y), new Point(x-1, y+1) );
+				validMoves.add(move);
+
+
+			}
+			if ( x+1 <= 7 && y+1 <= 7 && checkers[x+1][y+1] == null ) // regular right move allowed
+			{
+
+				// System.out.println("Found right move");
+				Move move = new Move( new Point(x, y), new Point(x+1, y+1) );
+				validMoves.add(move);
+
+			}
+			if ( checkers[x][y].getType() == PieceType.BLACK_KING || checkers[x][y].getType() == PieceType.RED_KING ) // If king piece, also check downward moves
+			{
+
+				if ( x-1 >= 0 && y-1 >= 0 && checkers[x-1][y-1] == null ) // regular left move allowed
+				{
+
+					Move move = new Move( new Point(x, y), new Point(x-1, y-1) );
+					validMoves.add(move);
+
+				}
+				if ( x+1 <= 7 && y-1 >= 0 && checkers[x+1][y-1] == null ) // regular right move allowed
+				{
+
+					Move move = new Move( new Point(x, y), new Point(x+1, y-1) );
+					validMoves.add(move);
+
+				}
+
+			}
+
+		}
+
+		return validMoves;
+
+	}
+
+	public void clearSuccessors( ArrayList<Move> validMoves )
+	{
+
+		validMoves.clear();
+
+	}
+
+	// If game is over, this function is called and resets the state
 	public void endGame()
 	{
 
@@ -629,13 +1177,6 @@ class Game {
 
 	}
 
-	public String getPlayerColour()
-	{
-
-		return playerColour;
-
-	}
-
 	public String getAIColour()
 	{
 
@@ -643,111 +1184,148 @@ class Game {
 
 	}
 
-	public ArrayList<Move> generateValidSuccessors()
+	// Captured position can be found by summing old and new pos and dividing by 2
+	public Point getCapturedPos( BoardMove boardMove )
+	{
+
+		int oldX = boardMove.getOldPos().x;
+		int oldY = boardMove.getOldPos().y;
+		int newX = boardMove.getNewPos().x;
+		int newY = boardMove.getNewPos().y;
+
+		return new Point( (oldX + newX) / 2, (oldY + newY) / 2 );
+
+	}
+
+	public int getDifficulty()
+	{
+
+		return difficulty;
+
+	}
+
+	public String getPlayerColour()
+	{
+
+		return playerColour;
+
+	}
+
+	public ArrayList<Move> generateValidSuccessors( Point pos )
 	{
 		String colour;
 		ArrayList<Move> validMoves = new ArrayList<Move>();
+		int x = pos.x;
+		int y = pos.y;
+
 		if ( this.whoseTurn() == "Human" )
 		{
+
 			colour = this.getPlayerColour();
 
-			for ( int x = 0; x < 8; x++ )
+			if ( checkers[x][y] != null && checkers[x][y].getColour() == colour )
 			{
-				for ( int y = 0; y < 8; y++ )
+
+				// System.out.println("Getting moves for piece (" + x + ", " + y + ")");
+				validMoves.addAll( addValidCaptureMoves( x, y, colour, checkers[x][y].getType(), 100, 100 ) );
+				if ( validMoves.isEmpty() ) // only add regular moves if there are no captures available
 				{
-					if ( checkers[x][y].getColour() == colour )
-					{
 
-						addValidCaptureMoves( x, y, colour, validMoves );
-						if ( validMoves.size() == 0 ) // only add regular moves if there are no captures available
-							addValidRegMoves( x, y, colour, validMoves );
-
-					}
+					// System.out.println("No captures found");
+					validMoves.addAll( addValidRegMoves( x, y, colour ) );
 
 				}
+
 			}
+
 		}
 		else
 		{
+
 			colour = this.getAIColour();
+			if ( checkers[x][y] != null && checkers[x][y].getColour() == colour )
+			{
+
+				validMoves.addAll( addValidCaptureMoves( x, y, colour, checkers[x][y].getType(), 100, 100 ) );
+				if ( validMoves.isEmpty() ) // only add regular moves if there are no captures available
+				{
+
+					// System.out.println("No captures found");
+					validMoves.addAll( addValidRegMoves( x, y, colour ) );
+
+				}
+
+			}
+
 		}
+
+		return validMoves;
 
 	}
 
-	private void addValidRegMoves( int x, int y, String colour, ArrayList<Move> validMoves )
+	public ArrayList<Move> generateAllValidSuccessors()
 	{
-		if ( x-1 >= 0 && y-1 >= 0 && checkers[x-1][y-1] == null ) // regular left move allowed
+
+		ArrayList<Move> allValidMoves = new ArrayList<Move>();
+		boolean captureFound = false;
+
+		for ( int x = 0; x < 8; x++ )
 		{
-
-			Move move = new Move( new Point(x, y), new Point(x-1, y-1) );
-			validMoves.add(move);
-
-		}
-		else if ( x+1 <= 7 && y-1 >= 0 && checkers[x+1][y-1] == null ) // regular right move allowed
-		{
-
-			Move move = new Move( new Point(x, y), new Point(x+1, y+1) );
-			validMoves.add(move);
-
-		}
-		else if ( checkers[x][y].getType() == PieceType.BLACK_KING || checkers[x][y].getType() == PieceType.RED_KING ) // If king piece, also check downward moves
-		{
-
-			if ( x-1 >= 0 && y+1 <= 7 && checkers[x-1][y+1] == null ) // regular left move allowed
+			for ( int y = 0; y < 8; y++ )
 			{
 
-				Move move = new Move( new Point(x, y), new Point(x-1, y+1) );
-				validMoves.add(move);
+				ArrayList<Move> validMoves = generateValidSuccessors( new Point( x, y ) );
+				for ( Move move : validMoves )
+				{
+					if ( captureFound )
+					{
+
+						if ( move.getMoveType() == "Capture" )
+							allValidMoves.add( move );
+
+
+					}
+					else if ( move.getMoveType() == "Capture" )
+					{
+
+						allValidMoves.clear();
+						captureFound = true;
+						allValidMoves.add(move);
+
+					}
+					else
+						allValidMoves.add(move);
+				}
+
+				// System.out.println("Valid moves size: "+validMoves.size());
 
 			}
-			else if ( x+1 <= 7 && y+1 <= 7 && checkers[x+1][y+1] == null ) // regular right move allowed
-			{
+		}
 
-				Move move = new Move( new Point(x, y), new Point(x+1, y+1) );
-				validMoves.add(move);
-
-			}
+		return allValidMoves;
 
 	}
 
-	private void addValidCaptureMoves( int x, int y, String colour, ArrayList<Move> validMoves )
+	public boolean getHelp()
 	{
 
-		// TODO: do conditions for capture move, recurse to check for multijump, skip searching for regular moves if captures found
-		if ( checkers[x-1][y-1].getColour() != colour && x-2 >= 0 && y-2 >= 0 && checkers[x-2][y-2] == null ) // left capture move allowed
+		return help;
+
+	}
+
+	public boolean humanHasWon()
+	{
+
+		// System.out.println("Player score: " + this.playerScore() );
+		if ( this.playerScore() == 12 )
 		{
 
-			Move move = new Move( new Point(x, y), new Point(x-2, y-2) );
-			validMoves.add(move);
+			inPlayFlag = false;
+			return true;
 
 		}
-		else if ( checkers[x+1][y-1].getColour() != colour && x+2 <= 7 && y-2 >= 0 && checkers[x+2][y-2] == null ) // right capture move allowed
-		{
-
-			Move move = new Move( new Point(x, y), new Point(x+2, y-2) );
-			validMoves.add(move);
-
-		}
-		else if ( checkers[x][y].getType() == PieceType.BLACK_KING || checkers[x][y].getType() == PieceType.RED_KING ) // If king piece, also check downward moves
-		{
-
-			// TODO: do conditions for capture move, recurse to check for multijump, skip searching for regular moves if captures found
-			if ( checkers[x-1][y+1].getColour() != colour && x-2 >= 0 && y+2 <= 7 && checkers[x-2][y+2] == null ) // left capture move allowed
-			{
-
-				Move move = new Move( new Point(x, y), new Point(x-2, y+2) );
-				validMoves.add(move);
-
-			}
-			else if ( checkers[x+1][y+1].getColour() != colour && x+2 <= 7 && y+2 <= 7 && checkers[x+2][y+2] == null ) // right capture move allowed
-			{
-
-				Move move = new Move( new Point(x, y), new Point(x+2, y+2) );
-				validMoves.add(move);
-
-			}
-
-		}
+		else
+			return false;
 
 	}
 
@@ -758,19 +1336,273 @@ class Game {
 
 	}
 
+	public boolean isWon()
+	{
+
+		if ( !inPlay() )
+			return false;
+		else
+			return ( this.humanHasWon() || this.aiHasWon() );
+
+	}
+
+	// Evaluate the utility of a leaf
+	// Score = (ai_score + num_ai_kings) - (player_score + num_player_kings)
+	public int leafUtility()
+	{
+
+		int aiScore = aiScore();
+		int playerScore = playerScore();
+		int aiKings = numKings( getAIColour() );
+		int playerKings = numKings( getPlayerColour() );
+
+		return ( aiScore + aiKings ) - (playerScore + playerKings );
+
+	}
+
+	public int numKings( String colour )
+	{
+
+		int numKings = 0;
+		for ( int x = 0; x < 8; x++ )
+		{
+			for ( int y = 0; y < 8; y++ )
+			{
+
+				if ( checkers[x][y] != null && checkers[x][y].getColour() == colour )
+					if ( checkers[x][y].getType() == PieceType.BLACK_KING || checkers[x][y].getType() == PieceType.RED_KING )
+					{
+
+						numKings++;
+
+					}
+
+			}
+		}
+
+		return numKings;
+
+	}
+
+	public Move makeAIMove()
+	{
+
+		int max = -10000;
+		int ind = -1;
+		int prev = max;
+		boolean allSame = true;
+		ArrayList<MoveAndScore> sameList = new ArrayList<MoveAndScore>();
+		seCount =0;
+		deCount=0;
+		pCount=0;
+
+		if ( this.whoseTurn() != "AI" )
+			return null;
+
+		aiMoveList = new ArrayList<MoveAndScore>();
+		minimax( 0, 1, Integer.MIN_VALUE, Integer.MAX_VALUE );
+
+		// iterate over successors and return the one with the highest eval result
+		for ( int i = 0; i < aiMoveList.size(); ++i )
+		{
+
+				if (max < aiMoveList.get(i).score)
+						max = aiMoveList.get(i).score;
+
+		}
+
+		// Choose move randomly from those with same score to make AI more unpredictable
+		for ( int i = 0; i < aiMoveList.size(); ++i )
+		{
+
+			if ( aiMoveList.get(i).score == max )
+				sameList.add( aiMoveList.get(i) );
+
+		}
+
+		Random rand = new Random();
+		ind = rand.nextInt(sameList.size());
+		return sameList.get(ind).move;
+
+	}
+
+	// AI minimax evaluation
+	// Generate valid moves, if depth level reached, return utility estimate,
+	// else start minimax evaluation.
+	// Create a temporary copy of the game state so that actual game state isn't updated
+	public int minimax( int depth, int player, int alpha, int beta )
+	{
+
+		int bestScore;
+
+		if(player == 1)
+				bestScore = -24;
+		else
+				bestScore = 24;
+
+		ArrayList<Move> allValidMoves = this.generateAllValidSuccessors();
+
+		// limit static evaluations acc. to diff. level,
+		// or not at all at "Impossible" (Level 4)
+		if(seCount <= seLevel || this.getDifficulty() == 4) {
+			// determine outcomes and increase SE cost
+			if (aiHasWon())
+
+			{
+					seCount++;
+					return +30; // Static evaluation result for the AI winning
+
+			}
+			if (humanHasWon())
+			{
+
+					seCount++;
+					return -30; // Static evaluation result for the AI losing
+
+			}
+			if ( depth > maxDepth )
+			{
+
+				return leafUtility();
+
+			}
+		}
+		else
+				return leafUtility();
+
+		System.out.println("Doing minimax evaluation");
+
+		for ( int i = 0; i < allValidMoves.size(); i++ )
+		{
+
+			// determine all board positions that aren't occupied
+			Move move = allValidMoves.get(i);
+
+			// increment dynamic evaluation cost
+			Game tempGame = new Game( this );
+			deCount++;
+
+			if ( player == 1 )
+			{ //AI's turn: get the highest result returned by minimax
+					// place a piece at the first available position
+
+				for ( BoardMove boardMove : move.moveList )
+				{ // iterate through all board positions, 1 for a single capture, multiple for mutlicap
+					tempGame.updateState( move.getMoveType(), boardMove );
+				}
+
+				// get the minimax evaluation result for making the previous move
+				tempGame.setPlayer( "Human" ); // switch player
+				int currentScore = tempGame.minimax( depth + 1, 2, alpha, beta ); // Increase
+
+				if ( currentScore > bestScore )
+						bestScore = currentScore;
+
+				alpha = Math.max( alpha, currentScore );
+				// store a mapping of complete evaluations (at depth 0) and their scores
+				if ( depth == 0 )
+						aiMoveList.add(new MoveAndScore(currentScore, move));
+
+			}
+			else if ( player == 2 )
+			{//Human's turn: get the lowest result returned by minimax
+
+				for ( BoardMove boardMove : move.moveList ) // iterate through all board positions, 1 for a single capture, multiple for mutlicap
+				{
+					tempGame.updateState( move.getMoveType(), boardMove );
+				}
+
+				tempGame.setPlayer( "AI" ); // switch player
+				int currentScore = tempGame.minimax(depth + 1, 1, alpha, beta);
+
+				if ( currentScore < bestScore )
+						bestScore = currentScore;
+
+				beta = Math.min( beta, currentScore );
+
+			}
+
+			// Add AB pruning & count the pruning operations carried out
+			if( alpha >= beta )
+			{
+
+					pCount++;
+					break;
+
+			}
+
+		}
+
+		return bestScore;
+
+	}
+
+	// Player score is max number of pieces minus number of ai player's pieces remaining
+	// Used to calculate leaf utility and to see if game is won
+	public int playerScore()
+	{
+
+		int score = 12;
+		for ( int x = 0; x < 8; x++ )
+		{
+			for ( int y = 0; y < 8; y++ )
+			{
+				if ( checkers[x][y] != null )
+				{
+
+					if ( checkers[x][y].getColour() == this.getAIColour() )
+						score--;
+
+				}
+			}
+		}
+
+		return score;
+
+	}
+
+	public void setColour()
+	{
+
+		playerColour = activePlayer == "Human" ? "Black" : "Red";
+		aiColour = playerColour == "Black" ? "Red" : "Black";
+
+	}
+
 	public void setDifficulty( String diffString )
 	{
 
-		switch ( diffString )
+		if ( diffString == "Intermediate" )
 		{
-			case "Easy":
-				difficulty = 1;
-			case "Intermediate":
-				difficulty = 2;
-			case "Hard":
-				difficulty = 3;
-			default:
-				difficulty = 1;
+
+			difficulty = 2;
+			maxDepth = 5;
+			seLevel = 3;
+
+		}
+		else if ( diffString == "Hard" )
+		{
+
+			difficulty = 3;
+			maxDepth = 7;
+			seLevel = 5;
+
+		}
+		else if ( diffString == "Extreme" )
+		{
+
+			difficulty = 4;
+			maxDepth = 10;
+			seLevel = 10;
+
+		}
+		else
+		{
+
+			difficulty = 1;
+			maxDepth = 2;
+			seLevel = 1;
+
 		}
 
 	}
@@ -789,12 +1621,15 @@ class Game {
 
 	}
 
+	// Initialise game state
+	// Set checkers in the checker board array
+	// Set game to in play
 	public void startGame()
 	{
 
-		System.out.println( "Starting game" );
 		inPlayFlag = true;
 		checkers = new Checker[8][8];
+		setColour();
 
 		// Top half of board
 		for ( int y = 0; y < 3; y++)
@@ -826,7 +1661,6 @@ class Game {
 					tempX = x + 1;
 
 				checkers[tempX][y] = new Checker( SQUARESIZE, tempX, y );
-				System.out.println("cx: " + checkers[tempX][y].centerX + ", cy: " + checkers[tempX][y].centerY);
 
 				if (activePlayer == "Human")
 					checkers[tempX][y].setType( PieceType.BLACK );
@@ -838,33 +1672,88 @@ class Game {
 
 	}
 
+	// Given a new move, update the internal game state
+	// Remove captured pieces, move pieces
+	public void updateState( String moveType, BoardMove boardMove )
+	{
+
+		int oldX = boardMove.oldPos.x;
+		int oldY = boardMove.oldPos.y;
+		int newX = boardMove.newPos.x;
+		int newY = boardMove.newPos.y;
+
+		checkers[newX][newY] = checkers[oldX][oldY];
+		checkers[newX][newY].setBoardPos( newX, newY );
+		checkers[oldX][oldY] = null;
+
+		// Convert piece to king if at the opposite end of board
+		if ( (this.whoseTurn() == "Human" && newY == 0) || (this.whoseTurn() == "AI" && newY == 7) )
+		{
+
+			if ( checkers[newX][newY].getType() == PieceType.BLACK )
+				checkers[newX][newY].setType( PieceType.BLACK_KING );
+			else if ( checkers[newX][newY].getType() == PieceType.RED )
+				checkers[newX][newY].setType( PieceType.RED_KING );
+
+		}
+
+		// If a capture, find the position of the captured piece, remove from game
+		if ( moveType == "Capture" )
+		{
+
+			Point capturedPos = this.getCapturedPos( boardMove );
+			checkers[capturedPos.x][capturedPos.y] = null;
+
+		}
+
+	}
+
 	public String whoseTurn()
 	{
 
 		return activePlayer;
 
 	}
+
 }
 
+// Class to hold information about an individual checker
+// Includes its board position, its associated center in pixel coordinates,
+// its colour and piece type
 class Checker {
 
 	private int boardPosX = 0;
 	private int boardPosY = 0;
 	public int centerX = 0;
 	public int centerY = 0;
-	private int coordX = 0;
-	private int coordY = 0;
+	public int coordX = 0;
+	public int coordY = 0;
 	private PieceType type;
 	private String pieceColour;
-	private static int SQUARESIZE;
+	public static int SQUARESIZE;
 
 	public Checker( int squareSize, int x, int y )
 	{
 
 		SQUARESIZE = squareSize;
 		setBoardPos( x, y );
-		// System.out.println("Sq size: " + SQUARESIZE);
-		// System.out.println(centerX);
+
+	}
+
+	// Copy constructor
+	public Checker( Checker original )
+	{
+
+		Point boardPos = original.getPos();
+		this.boardPosX = boardPos.x;
+		this.boardPosY = boardPos.y;
+		this.centerX = original.centerX;
+		this.centerY = original.centerY;
+		this.coordX = original.coordX;
+		this.coordY = original.coordY;
+		this.type = original.getType();
+		this.pieceColour = original.getColour();
+		this.SQUARESIZE = original.SQUARESIZE;
 
 	}
 
@@ -883,6 +1772,17 @@ class Checker {
 			g.setColor( Color.red );
 
 		g.fillOval( xCoord, yCoord, pieceSize, pieceSize );
+
+		if (type == PieceType.RED_KING || type == PieceType.BLACK_KING)
+		{
+
+			String text = "K";
+			FontMetrics fm = g.getFontMetrics();
+			double textWidth = fm.getStringBounds(text, g).getWidth();
+			g.setColor( new Color(163, 134, 19) );
+			g.drawString(text, (int) (centerX-textWidth/2), centerY);
+
+		}
 
 	}
 
@@ -914,6 +1814,7 @@ class Checker {
 
 	}
 
+	// Set checker's internal board position, and update its pixel coordinate centers
 	public void setBoardPos( int x, int y )
 	{
 
@@ -926,7 +1827,6 @@ class Checker {
 		coordY = boardPosY * SQUARESIZE;
 		centerX = (int) ( SQUARESIZE * boardPosX + SQUARESIZE / 2 );
 		centerY = (int) ( SQUARESIZE * boardPosY + SQUARESIZE / 2 );
-		System.out.println(centerY);
 
 	}
 
@@ -950,36 +1850,70 @@ class Checker {
 	}
 }
 
+// Class for a game move, which holds the move type ("Move" or "Capture"),
+// and a list of the moves (move list size is only > 1 for a multi capture move)
 class Move
 {
-	private ArrayList<BoardMove> moveList = new ArrayList<BoardMove>();
-	private String moveType;
+	public ArrayList<BoardMove> moveList = new ArrayList<BoardMove>();
+	public String moveType;
 
-	public Move( Point pos1, Point pos1 )
+	public Move( Point pos1, Point pos2 )
 	{
 
 		moveList.add( new BoardMove( pos1, pos2 ) );
-		if ( abs(pos2.x - pos1.x) == 1 && abs(pos2.y - pos1.y) == 1 )
+		if ( (pos2.x - pos1.x == 1 || pos2.x - pos1.x == -1)  && (pos2.y - pos1.y == 1 || pos2.y - pos1.y == -1) )
 			moveType = "Move";
 		else
 			moveType = "Capture";
 
 	}
 
-	// public void addMove( Point newMove )
-	// {
-	//
-	// 	moveList.
-	//
-	// }
-	//
+
+	public String getMove()
+	{
+
+		BoardMove move = (this.moveList).get(0);
+		String string = move.oldPos + " -> " + move.newPos;
+		// return this.moveList;
+		return string;
+
+	}
+
+	public Point getMovePos()
+	{
+
+		BoardMove move = (this.moveList).get(0);
+		return move.newPos;
+
+	}
+
+	public Point getStartPos()
+	{
+
+		BoardMove move = (this.moveList).get(0);
+		return move.oldPos;
+
+	}
+
+	public String getMoveType()
+	{
+
+		return this.moveType;
+
+	}
+
 }
 
+// Board move is a helper class for move, containing the starting position of
+// the move, and the end position
 class BoardMove
 {
 
-	private Point oldPos;
-	private Point newPos;
+	// private Point oldPos;
+	// private Point newPos;
+	public Point oldPos;
+	public Point newPos;
+	// public Point capturedPos = null;
 
 	public BoardMove( Point pos1, Point pos2 )
 	{
@@ -989,8 +1923,55 @@ class BoardMove
 
 	}
 
+	public Point getOldPos()
+	{
+
+		return oldPos;
+
+	}
+
+	public Point getNewPos()
+	{
+
+		return newPos;
+
+	}
+
+	public String getMove()
+	{
+
+		String string = this.oldPos + " -> " + this.newPos;
+		// return this.moveList;
+		return string;
+
+	}
+
 }
 
+// Used for AI move evaluation, holds a Move and its associated minimax score
+class MoveAndScore {
+
+	int score;
+	Move move;
+
+	public MoveAndScore(int score, Move move) {
+
+		this.score = score;
+		this.move = move;
+
+	}
+
+	// Copy constructor
+	public MoveAndScore( MoveAndScore original ) {
+
+		this.score = original.score;
+		this.move = original.move;
+
+	}
+
+}
+
+// Enum of the possible piece types
 enum PieceType
 {
 
